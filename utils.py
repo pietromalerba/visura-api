@@ -84,48 +84,30 @@ class PageLogger:
             print(f"[PAGE_LOG] Errore salvataggio {step_name}: {e}")
 
 
-async def login(page: Page):
-    ade_username = os.getenv("ADE_USERNAME")
-    ade_password = os.getenv("ADE_PASSWORD")
-    
-    if not ade_username or not ade_password:
-        raise ValueError("ADE_USERNAME and ADE_PASSWORD environment variables must be set")
-    
-    logger = PageLogger("login")
-    step = "init"
-    
+async def _login_sielte(page: Page, logger: PageLogger, username: str, password: str) -> None:
+    """Esegue l'autenticazione tramite provider SPID Sielte ID."""
+    step = "sielte_id"
     try:
-        step = "goto_login"
-        print("[LOGIN] Navigo alla pagina di login...")
-        await page.goto("https://iampe.agenziaentrate.gov.it/sam/UI/Login?realm=/agenziaentrate")
-        await logger.log(page, "goto_login")
-        
-        step = "entra_con_spid"
-        print("[LOGIN] Clicco 'Entra con SPID'...")
-        await page.get_by_role("button", name="Entra con SPID").click()
-        await logger.log(page, "entra_con_spid")
-        
-        step = "sielte_id"
         print("[LOGIN] Clicco 'Sielte ID'...")
         await page.locator('a[href*="sielte"]').click()
         await logger.log(page, "sielte_id")
-        
+
         step = "username"
         print("[LOGIN] Inserisco username...")
         await page.get_by_role("textbox", name="Codice Fiscale / Partita IVA").press("CapsLock")
-        await page.get_by_role("textbox", name="Codice Fiscale / Partita IVA").fill(ade_username)
+        await page.get_by_role("textbox", name="Codice Fiscale / Partita IVA").fill(username)
         await logger.log(page, "username")
-        
+
         step = "password"
         print("[LOGIN] Inserisco password...")
         await page.get_by_role("textbox", name="Password").click()
-        await page.get_by_role("textbox", name="Password").fill(ade_password)
-        
+        await page.get_by_role("textbox", name="Password").fill(password)
+
         step = "prosegui"
         print("[LOGIN] Clicco 'Prosegui'...")
         await page.get_by_role("button", name="Prosegui").click()
         await logger.log(page, "prosegui")
-        
+
         step = "notifica_push"
         print("[LOGIN] Cerco link notifica (può non esserci)...")
         try:
@@ -139,11 +121,95 @@ async def login(page: Page):
             except PlaywrightTimeoutError:
                 print("[LOGIN] Nessun link notifica trovato, continuo...")
         await logger.log(page, "notifica_push")
-        
+
         step = "autorizza"
         print("[LOGIN] Clicco 'Autorizza'... (attendo conferma notifica push, timeout 120s)")
         await page.get_by_role("button", name="Autorizza").click(timeout=120000)
         await logger.log(page, "autorizza")
+
+    except Exception as e:
+        await logger.log(page, f"ERRORE_sielte_{step}")
+        raise
+
+
+async def _login_poste(page: Page, logger: PageLogger, username: str, password: str) -> None:
+    """Esegue l'autenticazione tramite provider SPID Poste Italiane (PosteID).
+
+    Credenziali richieste:
+        POSTE_USERNAME — indirizzo email dell'account PosteID
+        POSTE_PASSWORD — password dell'account PosteID
+
+    Il secondo fattore è gestito tramite notifica push sull'app PosteID:
+    l'utente approva sull'app e la pagina si reindirizza automaticamente.
+    """
+    step = "poste_id"
+    try:
+        print("[LOGIN] Clicco 'Poste Italiane'...")
+        await page.locator('a[href*="poste"]').click()
+        await logger.log(page, "poste_id")
+
+        step = "username"
+        print("[LOGIN] Inserisco email PosteID...")
+        await page.get_by_role("textbox", name="Indirizzo e-mail").fill(username)
+        await logger.log(page, "username")
+
+        step = "password"
+        print("[LOGIN] Inserisco password PosteID...")
+        await page.get_by_role("textbox", name="Password").fill(password)
+
+        step = "avanti"
+        print("[LOGIN] Clicco 'Avanti'...")
+        await page.get_by_role("button", name="Avanti").click()
+        await logger.log(page, "avanti")
+
+        step = "attesa_app"
+        print("[LOGIN] Attendo approvazione sull'app PosteID (timeout 120s)...")
+        # PosteID reindirizza automaticamente dopo l'approvazione sull'app.
+        # Aspettiamo che il browser torni sul dominio agenziaentrate.
+        await page.wait_for_url("**/agenziaentrate.gov.it/**", timeout=120000)
+        await logger.log(page, "redirect_post_auth")
+
+    except Exception as e:
+        await logger.log(page, f"ERRORE_poste_{step}")
+        raise
+
+
+async def login(page: Page):
+    spid_provider = os.getenv("SPID_PROVIDER", "sielte").lower()
+
+    if spid_provider == "sielte":
+        username = os.getenv("ADE_USERNAME")
+        password = os.getenv("ADE_PASSWORD")
+        if not username or not password:
+            raise ValueError("ADE_USERNAME and ADE_PASSWORD environment variables must be set")
+    elif spid_provider == "poste":
+        username = os.getenv("POSTE_USERNAME")
+        password = os.getenv("POSTE_PASSWORD")
+        if not username or not password:
+            raise ValueError("POSTE_USERNAME and POSTE_PASSWORD environment variables must be set")
+    else:
+        raise ValueError(f"SPID_PROVIDER non supportato: '{spid_provider}'. Valori validi: 'sielte', 'poste'")
+
+    logger = PageLogger("login")
+    step = "init"
+
+    try:
+        step = "goto_login"
+        print("[LOGIN] Navigo alla pagina di login...")
+        await page.goto("https://iampe.agenziaentrate.gov.it/sam/UI/Login?realm=/agenziaentrate")
+        await logger.log(page, "goto_login")
+
+        step = "entra_con_spid"
+        print("[LOGIN] Clicco 'Entra con SPID'...")
+        await page.get_by_role("button", name="Entra con SPID").click()
+        await logger.log(page, "entra_con_spid")
+
+        step = f"provider_{spid_provider}"
+        print(f"[LOGIN] Autenticazione tramite provider: {spid_provider}...")
+        if spid_provider == "sielte":
+            await _login_sielte(page, logger, username, password)
+        elif spid_provider == "poste":
+            await _login_poste(page, logger, username, password)
         
         step = "cerca_sister"
         print("[LOGIN] Cerco servizio SISTER...")
