@@ -86,28 +86,10 @@ class PageLogger:
             print(f"[PAGE_LOG] Errore salvataggio {step_name}: {e}")
 
 
-async def login(page: Page):
-    ade_username = os.getenv("ADE_USERNAME")
-    ade_password = os.getenv("ADE_PASSWORD")
-
-    if not ade_username or not ade_password:
-        raise ValueError("ADE_USERNAME and ADE_PASSWORD environment variables must be set")
-
-    logger = PageLogger("login")
-    step = "init"
-
+async def _login_sielte(page: Page, logger: PageLogger, username: str, password: str) -> None:
+    """Esegue l'autenticazione tramite provider SPID Sielte ID."""
+    step = "sielte_id"
     try:
-        step = "goto_login"
-        print("[LOGIN] Navigo alla pagina di login...")
-        await page.goto("https://iampe.agenziaentrate.gov.it/sam/UI/Login?realm=/agenziaentrate")
-        await logger.log(page, "goto_login")
-
-        step = "entra_con_spid"
-        print("[LOGIN] Clicco 'Entra con SPID'...")
-        await page.get_by_role("button", name="Entra con SPID").click()
-        await logger.log(page, "entra_con_spid")
-
-        step = "sielte_id"
         print("[LOGIN] Clicco 'Sielte ID'...")
         await page.locator('a[href*="sielte"]').click()
         await logger.log(page, "sielte_id")
@@ -115,13 +97,13 @@ async def login(page: Page):
         step = "username"
         print("[LOGIN] Inserisco username...")
         await page.get_by_role("textbox", name="Codice Fiscale / Partita IVA").press("CapsLock")
-        await page.get_by_role("textbox", name="Codice Fiscale / Partita IVA").fill(ade_username)
+        await page.get_by_role("textbox", name="Codice Fiscale / Partita IVA").fill(username)
         await logger.log(page, "username")
 
         step = "password"
         print("[LOGIN] Inserisco password...")
         await page.get_by_role("textbox", name="Password").click()
-        await page.get_by_role("textbox", name="Password").fill(ade_password)
+        await page.get_by_role("textbox", name="Password").fill(password)
 
         step = "prosegui"
         print("[LOGIN] Clicco 'Prosegui'...")
@@ -150,6 +132,99 @@ async def login(page: Page):
         print("[LOGIN] Clicco 'Autorizza'... (attendo conferma notifica push, timeout 120s)")
         await page.get_by_role("button", name="Autorizza").click(timeout=120000)
         await logger.log(page, "autorizza")
+
+    except Exception as e:
+        await logger.log(page, f"ERRORE_sielte_{step}")
+        raise
+
+
+async def _login_sister_direct(page: Page, logger: PageLogger, username: str, password: str) -> None:
+    """Esegue il login diretto SISTER tramite il tab dedicato sulla pagina ADE.
+
+    Credenziali richieste:
+        SISTER_USERNAME — username account SISTER
+        SISTER_PASSWORD — password account SISTER
+
+    Dopo il login si naviga direttamente alla pagina SceltaServizio di SISTER,
+    saltando la navigazione tramite portale ADE (Cerca servizio → Vai al servizio
+    → Conferma → Consultazioni → Visure catastali → Conferma Lettura).
+    """
+    step = "sister_tab"
+    try:
+        print("[LOGIN] Clicco tab 'Sister'...")
+        await page.get_by_role("tab", name="Sister").click()
+        await logger.log(page, "sister_tab")
+
+        step = "username"
+        print("[LOGIN] Inserisco username SISTER...")
+        await page.get_by_role("textbox", name="Utente:").fill(username)
+        await logger.log(page, "username")
+
+        step = "password"
+        print("[LOGIN] Inserisco password SISTER...")
+        await page.get_by_role("textbox", name="Password:").fill(password)
+
+        step = "accedi"
+        print("[LOGIN] Clicco 'Accedi'...")
+        await page.get_by_role("button", name="Accedi").click()
+        await logger.log(page, "accedi")
+
+        step = "attesa_sister"
+        print("[LOGIN] Attendo caricamento portale SISTER...")
+        await page.wait_for_load_state("networkidle", timeout=30000)
+        await logger.log(page, "portale_sister")
+
+        # Verifica blocco sessione (stessa logica del flusso SPID)
+        content = await page.content()
+        url = page.url
+        if "Utente gia' in sessione" in content or "error_locked.jsp" in url:
+            print("[LOGIN][ERRORE] Utente già in sessione su un'altra postazione!")
+            raise Exception("Utente già in sessione su un'altra postazione")
+
+    except Exception as e:
+        await logger.log(page, f"ERRORE_sister_{step}")
+        raise
+
+
+async def login(page: Page):
+    spid_provider = os.getenv("SPID_PROVIDER", "sielte").lower()
+
+    if spid_provider == "sielte":
+        username = os.getenv("ADE_USERNAME")
+        password = os.getenv("ADE_PASSWORD")
+        if not username or not password:
+            raise ValueError("ADE_USERNAME and ADE_PASSWORD environment variables must be set")
+    elif spid_provider == "sister":
+        username = os.getenv("SISTER_USERNAME")
+        password = os.getenv("SISTER_PASSWORD")
+        if not username or not password:
+            raise ValueError("SISTER_USERNAME and SISTER_PASSWORD environment variables must be set")
+    else:
+        raise ValueError(f"SPID_PROVIDER non supportato: '{spid_provider}'. Valori validi: 'sielte', 'sister'")
+
+    logger = PageLogger("login")
+    step = "init"
+
+    try:
+        step = "goto_login"
+        print("[LOGIN] Navigo alla pagina di login...")
+        await page.goto("https://iampe.agenziaentrate.gov.it/sam/UI/Login?realm=/agenziaentrate")
+        await logger.log(page, "goto_login")
+
+        if spid_provider == "sister":
+            # Login diretto SISTER: bypass completo della navigazione ADE portal
+            step = "provider_sister"
+            await _login_sister_direct(page, logger, username, password)
+            return
+
+        step = "entra_con_spid"
+        print("[LOGIN] Clicco 'Entra con SPID'...")
+        await page.get_by_role("button", name="Entra con SPID").click()
+        await logger.log(page, "entra_con_spid")
+
+        step = "provider_sielte"
+        print("[LOGIN] Autenticazione tramite provider: sielte...")
+        await _login_sielte(page, logger, username, password)
 
         step = "cerca_sister"
         print("[LOGIN] Cerco servizio SISTER...")
