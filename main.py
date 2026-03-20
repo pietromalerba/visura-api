@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import time
@@ -7,13 +8,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, Optional
 
+import anthropic
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse, Response
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 from pydantic import BaseModel, Field, validator
 
-from utils import PageLogger, extract_all_sezioni, login, logout, run_visura, run_visura_immobile
+from pdf_generator import genera_pdf_visura
+from utils import PageLogger, extract_all_sezioni, login, logout, run_visura, run_visura_immobile, run_visura_pdf
 
 # Carica variabili d'ambiente da .env
 load_dotenv()
@@ -92,6 +96,36 @@ class VisuraIntestatiRequest:
     particella: str
     subalterno: Optional[str] = None
     sezione: Optional[str] = None
+    timestamp: datetime = None
+
+    def __post_init__(self):
+        if self.timestamp is None:
+            self.timestamp = datetime.now()
+
+
+@dataclass
+class VisuraPdfRequest:
+    request_id: str
+    tipo_catasto: str
+    provincia: str
+    comune: str
+    foglio: str
+    particella: str
+    sezione: Optional[str] = None
+    subalterno: Optional[str] = None
+    timestamp: datetime = None
+
+    def __post_init__(self):
+        if self.timestamp is None:
+            self.timestamp = datetime.now()
+
+
+@dataclass
+class VisuraPdfResponse:
+    request_id: str
+    success: bool
+    pdf_bytes: Optional[bytes] = None
+    error: Optional[str] = None
     timestamp: datetime = None
 
     def __post_init__(self):
@@ -442,6 +476,34 @@ class BrowserManager:
                 error=str(e),
             )
 
+    async def esegui_visura_pdf(self, request: VisuraPdfRequest) -> VisuraPdfResponse:
+        """Scrapes visura + intestati da SISTER e genera un PDF strutturato."""
+        try:
+            await self._ensure_authenticated()
+            data = await run_visura(
+                self.auth_page,
+                request.provincia,
+                request.comune,
+                request.sezione,
+                request.foglio,
+                request.particella,
+                request.tipo_catasto,
+                extract_intestati=True,
+            )
+            pdf_bytes = genera_pdf_visura(
+                provincia=request.provincia,
+                comune=request.comune,
+                foglio=request.foglio,
+                particella=request.particella,
+                tipo_catasto=request.tipo_catasto,
+                data=data,
+            )
+            logger.info(f"PDF generato per {request.request_id} ({len(pdf_bytes)} bytes)")
+            return VisuraPdfResponse(request_id=request.request_id, success=True, pdf_bytes=pdf_bytes)
+        except Exception as e:
+            logger.error(f"Errore generazione PDF {request.request_id}: {e}")
+            return VisuraPdfResponse(request_id=request.request_id, success=False, error=str(e))
+
     async def restart_browser_if_needed(self):
         """Riavvia il browser se necessario"""
         try:
@@ -499,6 +561,7 @@ class VisuraService:
         self.browser_manager = BrowserManager()
         self.request_queue = asyncio.Queue()
         self.response_store: Dict[str, VisuraResponse] = {}
+        self.pdf_store: Dict[str, VisuraPdfResponse] = {}
         self.processing = False
 
     async def initialize(self):
@@ -529,6 +592,11 @@ class VisuraService:
                     self.response_store[request.request_id] = response
                     logger.info(f"Processata richiesta intestati {request.request_id}")
 
+                elif isinstance(request, VisuraPdfRequest):
+                    response = await self.browser_manager.esegui_visura_pdf(request)
+                    self.pdf_store[request.request_id] = response
+                    logger.info(f"Processata richiesta PDF {request.request_id}")
+
                 else:
                     logger.error(f"Tipo di richiesta sconosciuto: {type(request)}")
 
@@ -557,9 +625,19 @@ class VisuraService:
         )
         return request.request_id
 
+    async def add_pdf_request(self, request: VisuraPdfRequest) -> str:
+        """Aggiunge una richiesta PDF alla coda"""
+        await self.request_queue.put({"request": request})
+        logger.info(f"Richiesta PDF {request.request_id} aggiunta alla coda (posizione: {self.request_queue.qsize()})")
+        return request.request_id
+
     async def get_response(self, request_id: str) -> Optional[VisuraResponse]:
         """Ottiene la risposta per un request_id"""
         return self.response_store.get(request_id)
+
+    async def get_pdf_response(self, request_id: str) -> Optional[VisuraPdfResponse]:
+        """Ottiene la risposta PDF per un request_id"""
+        return self.pdf_store.get(request_id)
 
     async def shutdown(self):
         """Chiude il servizio"""
@@ -609,6 +687,13 @@ async def lifespan(app: FastAPI):
 
 # API FastAPI
 app = FastAPI(title="Servizio Visure Catastali", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ---------------------------------------------------------------------------
 # Modelli di richiesta
@@ -674,6 +759,11 @@ class SezioniExtractionRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
+
+
+@app.get("/ui", include_in_schema=False)
+async def serve_ui():
+    return FileResponse("visura.html", media_type="text/html")
 
 
 @app.post("/visura")
@@ -784,6 +874,63 @@ async def richiedi_intestati_immobile(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/visura/pdf")
+async def richiedi_visura_pdf(request: VisuraInput, service: VisuraService = Depends(get_visura_service)):
+    """Richiede il PDF nativo della visura catastale tramite Playwright."""
+    try:
+        tipo_catasto = request.tipo_catasto or "F"
+        if tipo_catasto not in ("T", "F"):
+            raise HTTPException(status_code=422, detail="tipo_catasto deve essere 'T' o 'F' per richieste PDF")
+
+        sezione = None if request.sezione == "_" else request.sezione
+        request_id = f"pdf_{tipo_catasto}_{int(time.time() * 1000)}"
+
+        pdf_request = VisuraPdfRequest(
+            request_id=request_id,
+            tipo_catasto=tipo_catasto,
+            provincia=request.provincia,
+            comune=request.comune,
+            sezione=sezione,
+            foglio=request.foglio,
+            particella=request.particella,
+            subalterno=request.subalterno,
+        )
+        await service.add_pdf_request(pdf_request)
+
+        return JSONResponse(
+            {
+                "request_id": request_id,
+                "status": "queued",
+                "message": f"Richiesta PDF aggiunta alla coda per {request.comune} F.{request.foglio} P.{request.particella}",
+                "queue_position": service.request_queue.qsize(),
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Errore nella richiesta PDF: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/visura/{request_id}/pdf")
+async def scarica_visura_pdf(request_id: str, service: VisuraService = Depends(get_visura_service)):
+    """Scarica il PDF generato per una richiesta visura."""
+    response = await service.get_pdf_response(request_id)
+
+    if response is None:
+        return JSONResponse({"request_id": request_id, "status": "processing", "message": "PDF in elaborazione"})
+
+    if not response.success:
+        raise HTTPException(status_code=500, detail=response.error or "Errore nella generazione del PDF")
+
+    filename = f"visura_{request_id}.pdf"
+    return Response(
+        content=response.pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/health")
 async def health_check(service: VisuraService = Depends(get_visura_service)):
     """Controlla lo stato del servizio"""
@@ -846,4 +993,74 @@ async def extract_sezioni(request: SezioniExtractionRequest, service: VisuraServ
         raise
     except Exception as e:
         logger.error(f"Errore durante estrazione sezioni: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Chat endpoint ─────────────────────────────────────────────────────────────
+
+_CHAT_SYSTEM = """Sei un assistente catastale italiano. L'utente descrive una proprietà da ricercare nel catasto italiano.
+
+Il tuo compito è estrarre i parametri dalla richiesta e rispondere SOLO con un oggetto JSON valido, senza testo aggiuntivo.
+
+Campi da estrarre:
+- provincia: sigla provincia a 2 lettere (es. "FG" per Foggia, "MI" per Milano, "RM" per Roma)
+- comune: nome del comune in MAIUSCOLO (es. "POGGIO IMPERIALE")
+- foglio: numero foglio come stringa (es. "14")
+- particella: numero particella come stringa (es. "2016")
+- tipo_catasto: "F" per Fabbricati (default), "T" per Terreni
+- sezione: sezione catastale (stringa, null se assente)
+- subalterno: numero subalterno (stringa, null se assente)
+
+Se mancano informazioni essenziali (provincia, comune, foglio, particella) rispondi con:
+{"error": true, "missing": ["campo1", "campo2"], "message": "Messaggio amichevole che spiega cosa manca"}
+
+Se i dati sono completi rispondi con:
+{"error": false, "provincia": "XX", "comune": "NOME", "foglio": "N", "particella": "N", "tipo_catasto": "F", "sezione": null, "subalterno": null, "summary": "Frase breve che riassume la ricerca, es: Fabbricato a Poggio Imperiale (FG), Foglio 14 Particella 2016"}
+
+Non aggiungere NULLA oltre al JSON."""
+
+
+class ChatMessage(BaseModel):
+    message: str = Field(..., min_length=1, max_length=500)
+    history: list = Field(default_factory=list)
+
+
+@app.post("/chat")
+async def chat(req: ChatMessage):
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY non configurata")
+
+    # Costruisci la cronologia (max ultimi 6 turni per risparmiare token)
+    messages = []
+    for turn in req.history[-6:]:
+        if turn.get("role") in ("user", "assistant"):
+            messages.append({"role": turn["role"], "content": turn["content"]})
+    messages.append({"role": "user", "content": req.message})
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+            system=_CHAT_SYSTEM,
+            messages=messages,
+        )
+        raw = response.content[0].text.strip()
+
+        # Estrai JSON dalla risposta (a volte Claude avvolge in backtick)
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        raw = raw.strip()
+
+        data = json.loads(raw)
+        return JSONResponse(data)
+
+    except json.JSONDecodeError:
+        logger.error(f"Chat: risposta Claude non è JSON valido: {raw!r}")
+        return JSONResponse({"error": True, "message": "Non ho capito la richiesta. Riprova con più dettagli.", "missing": []})
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Visure Catastali — Archivio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@300;400;500&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --parchment:    #f5ede0;
+      --parchment-dk: #ede0cc;
+      --ink:          #1c2b1e;
+      --ink-faint:    #4a5c4d;
+      --gold:         #a8813a;
+      --gold-light:   #c9a45c;
+      --burgundy:     #7a2d2d;
+      --green-dk:     #1e3d22;
+      --green-md:     #2e5433;
+      --rule:         rgba(28, 43, 30, 0.18);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background-color: var(--parchment);
+      background-image:
+        radial-gradient(ellipse at 20% 10%, rgba(168,129,58,0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 90%, rgba(30,61,34,0.06) 0%, transparent 50%),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      color: var(--ink);
+      font-family: 'EB Garamond', Georgia, serif;
+    }
+
+    header {
+      border-bottom: 1px solid var(--rule);
+      padding: 2rem 3rem 1.5rem;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 2rem;
+    }
+
+    .header-title {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .header-eyebrow {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.62rem;
+      font-weight: 400;
+      letter-spacing: 0.22em;
+      color: var(--gold);
+      text-transform: uppercase;
+    }
+
+    h1 {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 2.5rem;
+      font-weight: 300;
+      line-height: 1;
+      color: var(--green-dk);
+      letter-spacing: -0.01em;
+    }
+
+    h1 em {
+      font-style: italic;
+      font-weight: 300;
+      color: var(--gold);
+    }
+
+    .header-seal {
+      width: 56px;
+      height: 56px;
+      flex-shrink: 0;
+      opacity: 0.7;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2.5rem 3rem 4rem;
+    }
+
+    .form-card {
+      background: rgba(255,255,255,0.38);
+      border: 1px solid var(--rule);
+      border-top: 3px solid var(--green-md);
+      padding: 2rem 2.5rem 2.5rem;
+      margin-bottom: 2rem;
+      position: relative;
+    }
+
+    .form-card::before {
+      content: '';
+      position: absolute;
+      top: -1px; right: 2rem;
+      width: 1px; height: 8px;
+      background: var(--gold);
+    }
+
+    .form-section-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.6rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 1.4rem;
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+    }
+
+    .form-section-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--rule);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1.2rem 1.5rem;
+    }
+
+    .form-grid .span2 { grid-column: span 2; }
+    .form-grid .span3 { grid-column: span 3; }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.58rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+
+    label .optional {
+      font-size: 0.52rem;
+      color: var(--gold);
+      margin-left: 0.4em;
+      letter-spacing: 0.08em;
+    }
+
+    input[type="text"],
+    select {
+      appearance: none;
+      -webkit-appearance: none;
+      background: rgba(255,255,255,0.6);
+      border: 1px solid rgba(28,43,30,0.22);
+      border-bottom: 2px solid rgba(28,43,30,0.3);
+      padding: 0.55rem 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      font-weight: 400;
+      color: var(--ink);
+      transition: border-color 0.18s, background 0.18s, box-shadow 0.18s;
+      outline: none;
+      width: 100%;
+    }
+
+    input[type="text"]:focus,
+    select:focus {
+      background: rgba(255,255,255,0.85);
+      border-color: rgba(30,61,34,0.5);
+      border-bottom-color: var(--green-md);
+      box-shadow: 0 2px 0 0 rgba(46,84,51,0.12);
+    }
+
+    input::placeholder {
+      color: rgba(28,43,30,0.3);
+      font-style: italic;
+    }
+
+    select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234a5c4d'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.75rem center;
+      padding-right: 2rem;
+      cursor: pointer;
+    }
+
+    .endpoint-toggle {
+      display: flex;
+      gap: 0;
+      border: 1px solid rgba(28,43,30,0.22);
+      overflow: hidden;
+      width: fit-content;
+    }
+
+    .endpoint-toggle input[type="radio"] { display: none; }
+
+    .endpoint-toggle label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      text-transform: none;
+      padding: 0.5rem 1.1rem;
+      cursor: pointer;
+      background: rgba(255,255,255,0.4);
+      color: var(--ink-faint);
+      transition: all 0.15s;
+      border: none;
+      user-select: none;
+    }
+
+    .endpoint-toggle label:first-of-type {
+      border-right: 1px solid rgba(28,43,30,0.18);
+    }
+
+    .endpoint-toggle input[type="radio"]:checked + label {
+      background: var(--green-dk);
+      color: var(--parchment);
+    }
+
+    .action-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 1.8rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .endpoint-section {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .endpoint-section > span {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.58rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+
+    .btn-submit {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      background: var(--green-dk);
+      color: var(--parchment);
+      border: none;
+      padding: 0.75rem 2rem;
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 1.05rem;
+      font-weight: 400;
+      font-style: italic;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: background 0.18s, transform 0.1s;
+      outline: none;
+    }
+
+    .btn-submit:hover { background: var(--green-md); }
+    .btn-submit:active { transform: scale(0.98); }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .btn-submit svg { transition: transform 0.3s; }
+    .btn-submit:not(:disabled):hover svg { transform: translateX(3px); }
+
+    #status-bar {
+      display: none;
+      align-items: center;
+      gap: 0.9rem;
+      padding: 0.85rem 1.2rem;
+      background: rgba(255,255,255,0.5);
+      border: 1px solid var(--rule);
+      border-left: 3px solid var(--gold);
+      margin-bottom: 1.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--ink-faint);
+    }
+
+    #status-bar.visible { display: flex; }
+    #status-bar.error { border-left-color: var(--burgundy); color: var(--burgundy); }
+    #status-bar.success { border-left-color: var(--green-md); }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(168,129,58,0.3);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #results { display: none; flex-direction: column; gap: 1.2rem; }
+    #results.visible { display: flex; }
+
+    .results-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding-bottom: 0.8rem;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .results-title {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 1.3rem;
+      font-weight: 300;
+      color: var(--green-dk);
+    }
+
+    .results-meta {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.62rem;
+      color: var(--gold);
+      letter-spacing: 0.1em;
+    }
+
+    .result-card {
+      background: rgba(255,255,255,0.42);
+      border: 1px solid var(--rule);
+      overflow: hidden;
+      animation: fadeUp 0.3s ease both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .result-card-header {
+      background: var(--green-dk);
+      color: var(--parchment);
+      padding: 0.6rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .result-card-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.6rem;
+      letter-spacing: 0.15em;
+      opacity: 0.7;
+    }
+
+    .result-card-type {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 1.05rem;
+      font-style: italic;
+      font-weight: 300;
+    }
+
+    .result-card-body { padding: 1rem 1.2rem; }
+
+    .result-fields {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 0.9rem 1.5rem;
+    }
+
+    .result-field { display: flex; flex-direction: column; gap: 0.2rem; }
+
+    .result-field-key {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.56rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold);
+    }
+
+    .result-field-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: var(--ink);
+      word-break: break-word;
+    }
+
+    .raw-toggle {
+      margin-top: 0.8rem;
+      padding-top: 0.8rem;
+      border-top: 1px solid var(--rule);
+    }
+
+    .raw-toggle summary {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.6rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .raw-toggle summary::before {
+      content: '\25B6';
+      font-size: 0.5rem;
+      transition: transform 0.15s;
+    }
+
+    .raw-toggle[open] summary::before { transform: rotate(90deg); }
+
+    .raw-toggle pre {
+      margin-top: 0.6rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--ink-faint);
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-height: 1.6;
+    }
+
+    .intestati-section {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px dashed var(--rule);
+    }
+
+    .intestati-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.58rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 0.7rem;
+    }
+
+    .intestato-item {
+      background: rgba(28,43,30,0.04);
+      border-left: 2px solid var(--gold-light);
+      padding: 0.5rem 0.8rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .intestato-item .result-fields { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+
+    .empty-state {
+      padding: 2rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--ink-faint);
+      text-align: center;
+      border: 1px dashed var(--rule);
+    }
+
+    footer {
+      text-align: center;
+      padding: 2rem;
+      border-top: 1px solid var(--rule);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.58rem;
+      color: rgba(28,43,30,0.3);
+      letter-spacing: 0.12em;
+    }
+
+    @media (max-width: 640px) {
+      header { padding: 1.5rem; }
+      .container { padding: 1.5rem; }
+      .form-card { padding: 1.5rem; }
+      .form-grid { grid-template-columns: 1fr 1fr; }
+      .form-grid .span3 { grid-column: span 2; }
+      h1 { font-size: 1.9rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-title">
+    <span class="header-eyebrow">Sistema Integrato dei Servizi Territoriali ed Estimativi</span>
+    <h1>Visure <em>Catastali</em></h1>
+  </div>
+  <svg class="header-seal" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="50" cy="50" r="45" stroke="#a8813a" stroke-width="1.5"/>
+    <circle cx="50" cy="50" r="40" stroke="#a8813a" stroke-width="0.5"/>
+    <circle cx="50" cy="50" r="35" stroke="#a8813a" stroke-width="1"/>
+    <path d="M50 15 L53 26 L64 26 L55 33 L58 44 L50 37 L42 44 L45 33 L36 26 L47 26 Z" fill="#a8813a" opacity="0.8"/>
+    <text x="50" y="62" text-anchor="middle" font-family="serif" font-size="7" fill="#1e3d22" letter-spacing="1">CATASTO</text>
+    <text x="50" y="72" text-anchor="middle" font-family="monospace" font-size="4.5" fill="#a8813a" letter-spacing="2">ITALIA</text>
+    <circle cx="50" cy="50" r="42" stroke="#a8813a" stroke-width="0.5" stroke-dasharray="2 3"/>
+  </svg>
+</header>
+
+<div class="container">
+
+  <div class="form-card">
+    <div class="form-section-label">Dati Identificativi Immobile</div>
+
+    <form id="queryForm">
+      <div class="form-grid">
+
+        <div class="field span2">
+          <label for="provincia">Provincia</label>
+          <input type="text" id="provincia" name="provincia" placeholder="es. Trieste" autocomplete="off" required>
+        </div>
+
+        <div class="field">
+          <label for="tipo_catasto">Tipo Catasto</label>
+          <select id="tipo_catasto" name="tipo_catasto" required>
+            <option value="T">T — Terreni</option>
+            <option value="F">F — Fabbricati</option>
+          </select>
+        </div>
+
+        <div class="field span2">
+          <label for="comune">Comune</label>
+          <input type="text" id="comune" name="comune" placeholder="es. Trieste" autocomplete="off" required>
+        </div>
+
+        <div class="field">
+          <label for="sezione">Sezione <span class="optional">opzionale</span></label>
+          <input type="text" id="sezione" name="sezione" placeholder="—" autocomplete="off">
+        </div>
+
+        <div class="field">
+          <label for="foglio">Foglio</label>
+          <input type="text" id="foglio" name="foglio" placeholder="es. 9" autocomplete="off" required>
+        </div>
+
+        <div class="field">
+          <label for="particella">Particella</label>
+          <input type="text" id="particella" name="particella" placeholder="es. 166" autocomplete="off" required>
+        </div>
+
+        <div class="field">
+          <label for="subalterno">Subalterno <span class="optional">opzionale</span></label>
+          <input type="text" id="subalterno" name="subalterno" placeholder="—" autocomplete="off">
+        </div>
+
+      </div>
+
+      <div class="action-row">
+        <div class="endpoint-section">
+          <span>Tipo interrogazione</span>
+          <div class="endpoint-toggle">
+            <input type="radio" name="endpoint" id="ep_visura" value="visura" checked>
+            <label for="ep_visura">Solo visura</label>
+            <input type="radio" name="endpoint" id="ep_intestati" value="visura-intestati">
+            <label for="ep_intestati">Con intestatari</label>
+            <input type="radio" name="endpoint" id="ep_pdf" value="visura/pdf">
+            <label for="ep_pdf">PDF nativo</label>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-submit" id="submitBtn">
+          Interroga archivio
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <div id="status-bar">
+    <div class="spinner" id="spinner"></div>
+    <span id="status-text"></span>
+  </div>
+
+  <div id="results">
+    <div class="results-header">
+      <span class="results-title" id="results-title"></span>
+      <span class="results-meta" id="results-meta"></span>
+    </div>
+    <div id="results-body"></div>
+  </div>
+
+</div>
+
+<footer>SISTER · Agenzia delle Entrate · Visure Catastali · v1.0</footer>
+
+<script>
+  const API_BASE     = 'http://localhost:8000';
+  const POLL_INTERVAL = 2000;
+  const MAX_POLLS    = 90;
+
+  const form         = document.getElementById('queryForm');
+  const submitBtn    = document.getElementById('submitBtn');
+  const statusBar    = document.getElementById('status-bar');
+  const statusText   = document.getElementById('status-text');
+  const spinnerEl    = document.getElementById('spinner');
+  const resultsEl    = document.getElementById('results');
+  const resultsTitleEl = document.getElementById('results-title');
+  const resultsMetaEl  = document.getElementById('results-meta');
+  const resultsBody  = document.getElementById('results-body');
+
+  // ── DOM helpers ────────────────────────────────────────────────────────────
+
+  function el(tag, cls) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    return e;
+  }
+
+  function txt(parent, text) {
+    parent.appendChild(document.createTextNode(text));
+    return parent;
+  }
+
+  // ── Status bar ─────────────────────────────────────────────────────────────
+
+  function setStatus(msg, type) {
+    statusBar.className = 'visible';
+    if (type === 'error')   statusBar.classList.add('error');
+    if (type === 'success') statusBar.classList.add('success');
+    statusText.textContent = msg;
+    spinnerEl.style.display = (type === 'loading') ? 'block' : 'none';
+    statusBar.style.display = 'flex';
+  }
+
+  function hideStatus() {
+    statusBar.className = '';
+    statusBar.style.display = 'none';
+  }
+
+  function setFormDisabled(disabled) {
+    submitBtn.disabled = disabled;
+    form.querySelectorAll('input, select').forEach(function(e) { e.disabled = disabled; });
+  }
+
+  // ── Render a key/value field ───────────────────────────────────────────────
+
+  function makeField(key, value) {
+    if (value === null || value === undefined || value === '') return null;
+    var label = key.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+    var wrapper = el('div', 'result-field');
+    txt(el('span', 'result-field-key'), label).parentNode &&
+      wrapper.appendChild(txt(el('span', 'result-field-key'), label));
+    wrapper.appendChild(txt(el('span', 'result-field-value'), String(value)));
+    return wrapper;
+  }
+
+  // ── Render a fields grid from an object ───────────────────────────────────
+
+  function makeFieldsGrid(obj, skipKeys, extraCls) {
+    var grid = el('div', 'result-fields' + (extraCls ? ' ' + extraCls : ''));
+    Object.entries(obj).forEach(function(entry) {
+      var k = entry[0], v = entry[1];
+      if (skipKeys && skipKeys.indexOf(k.toLowerCase()) !== -1) return;
+      if (v !== null && v !== undefined && !Array.isArray(v) && typeof v !== 'object') {
+        var f = makeField(k, v);
+        if (f) grid.appendChild(f);
+      }
+    });
+    return grid;
+  }
+
+  // ── Render intestatari section ─────────────────────────────────────────────
+
+  var OWNER_KEYS = ['intestatari', 'intestati', 'titolari'];
+
+  function findOwners(record) {
+    for (var i = 0; i < OWNER_KEYS.length; i++) {
+      var k = OWNER_KEYS[i];
+      var v = record[k] || record[k.charAt(0).toUpperCase() + k.slice(1)];
+      if (Array.isArray(v) && v.length > 0) return v;
+    }
+    return null;
+  }
+
+  function makeIntestatiSection(owners) {
+    var section = el('div', 'intestati-section');
+    txt(el('div', 'intestati-title'), 'Intestatari (' + owners.length + ')').parentNode &&
+      section.appendChild(txt(el('div', 'intestati-title'), 'Intestatari (' + owners.length + ')'));
+
+    owners.forEach(function(owner) {
+      var item = el('div', 'intestato-item');
+      var grid = makeFieldsGrid(owner, null, null);
+      grid.className = 'result-fields';
+      grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(140px, 1fr))';
+      item.appendChild(grid);
+      section.appendChild(item);
+    });
+    return section;
+  }
+
+  // ── Render a single record card ────────────────────────────────────────────
+
+  function makeRecordCard(record, idx, total) {
+    var card = el('div', 'result-card');
+    card.style.animationDelay = (idx * 60) + 'ms';
+
+    // Header
+    var header = el('div', 'result-card-header');
+    var numEl  = el('span', 'result-card-num');
+    numEl.textContent = 'RECORD ' + String(idx + 1).padStart(2, '0') + ' / ' + total;
+    var typeEl = el('span', 'result-card-type');
+    typeEl.textContent = String(record.tipo || record.categoria || record.qualita || record.natura || 'Unità immobiliare');
+    header.appendChild(numEl);
+    header.appendChild(typeEl);
+    card.appendChild(header);
+
+    // Body
+    var body = el('div', 'result-card-body');
+
+    // Main fields (skip owner arrays)
+    var skipLower = OWNER_KEYS.slice();
+    body.appendChild(makeFieldsGrid(record, skipLower, null));
+
+    // Intestatari
+    var owners = findOwners(record);
+    if (owners) body.appendChild(makeIntestatiSection(owners));
+
+    // Raw JSON toggle
+    var details = el('details', 'raw-toggle');
+    var summary = el('summary');
+    summary.textContent = 'JSON grezzo';
+    var pre = el('pre');
+    pre.textContent = JSON.stringify(record, null, 2);
+    details.appendChild(summary);
+    details.appendChild(pre);
+    body.appendChild(details);
+
+    card.appendChild(body);
+    return card;
+  }
+
+  // ── Render full API response ───────────────────────────────────────────────
+
+  function renderResults(data) {
+    resultsBody.textContent = '';
+    resultsEl.className = 'visible';
+
+    var records = data.results || data.data || data.visure || data.items || [];
+    var total   = (data.total_results !== undefined) ? data.total_results : (data.total !== undefined ? data.total : records.length);
+    var reqId   = data.request_id || '';
+
+    if (total === 0) {
+      resultsTitleEl.textContent = 'Nessun risultato trovato';
+    } else if (total === 1) {
+      resultsTitleEl.textContent = '1 unità catastale trovata';
+    } else {
+      resultsTitleEl.textContent = total + ' unità catastali trovate';
+    }
+
+    resultsMetaEl.textContent = reqId ? 'ID: ' + reqId.substring(0, 20) + '\u2026' : '';
+
+    if (records.length === 0) {
+      var empty = el('div', 'empty-state');
+      empty.textContent = 'Nessuna unità immobiliare trovata per i criteri inseriti.';
+      resultsBody.appendChild(empty);
+      return;
+    }
+
+    records.forEach(function(rec, i) {
+      resultsBody.appendChild(makeRecordCard(rec, i, records.length));
+    });
+
+    // Fallback: no known key found — show raw JSON
+    if (!data.results && !data.data && !data.visure && !data.items) {
+      resultsBody.textContent = '';
+      var rawWrapper = el('div');
+      rawWrapper.style.cssText = 'background:rgba(255,255,255,0.5);border:1px solid var(--rule);padding:1.2rem;';
+      var rawLabel = el('div');
+      rawLabel.style.cssText = 'font-family:"JetBrains Mono",monospace;font-size:0.6rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gold);margin-bottom:0.6rem;';
+      rawLabel.textContent = 'Risposta API';
+      var rawPre = el('pre');
+      rawPre.style.cssText = 'font-family:"JetBrains Mono",monospace;font-size:0.68rem;white-space:pre-wrap;word-break:break-all;color:var(--ink-faint);';
+      rawPre.textContent = JSON.stringify(data, null, 2);
+      rawWrapper.appendChild(rawLabel);
+      rawWrapper.appendChild(rawPre);
+      resultsBody.appendChild(rawWrapper);
+    }
+  }
+
+  // ── Polling ────────────────────────────────────────────────────────────────
+
+  function pollResult(requestId, pollCount) {
+    pollCount = pollCount || 0;
+    if (pollCount >= MAX_POLLS) {
+      setStatus('Timeout: nessuna risposta entro 3 minuti.', 'error');
+      setFormDisabled(false);
+      return;
+    }
+
+    setTimeout(function() {
+      fetch(API_BASE + '/visura/' + encodeURIComponent(requestId))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var status = (data.status || '').toLowerCase();
+
+          if (status === 'pending' || status === 'processing' || status === 'queued') {
+            var pos = data.queue_position ? ' (posizione ' + data.queue_position + ')' : '';
+            setStatus('Elaborazione in corso' + pos + '\u2026 (' + (pollCount + 1) + ')', 'loading');
+            pollResult(requestId, pollCount + 1);
+            return;
+          }
+
+          if (status === 'completed' || status === 'success') {
+            hideStatus();
+            setFormDisabled(false);
+            renderResults(data);
+            return;
+          }
+
+          if (status === 'error' || status === 'failed') {
+            setStatus('Errore: ' + (data.error || data.message || 'Errore sconosciuto'), 'error');
+            setFormDisabled(false);
+            return;
+          }
+
+          // Unknown status — try rendering anyway
+          hideStatus();
+          setFormDisabled(false);
+          renderResults(data);
+        })
+        .catch(function(err) {
+          setStatus('Errore di rete durante il polling: ' + err.message, 'error');
+          setFormDisabled(false);
+        });
+    }, POLL_INTERVAL);
+  }
+
+  // ── PDF Polling ───────────────────────────────────────────────────────────
+
+  function pollPdf(requestId, pollCount) {
+    pollCount = pollCount || 0;
+    if (pollCount >= MAX_POLLS) {
+      setStatus('Timeout: PDF non generato entro 3 minuti.', 'error');
+      setFormDisabled(false);
+      return;
+    }
+
+    setTimeout(function() {
+      fetch(API_BASE + '/visura/' + encodeURIComponent(requestId) + '/pdf')
+        .then(function(resp) {
+          if (resp.status === 200 && resp.headers.get('Content-Type') === 'application/pdf') {
+            return resp.blob().then(function(blob) {
+              return { type: 'pdf', blob: blob };
+            });
+          }
+          return resp.json().then(function(data) { return { type: 'json', data: data }; });
+        })
+        .then(function(result) {
+          if (result.type === 'pdf') {
+            hideStatus();
+            setFormDisabled(false);
+            var url = URL.createObjectURL(result.blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'visura_' + requestId + '.pdf';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            setStatus('PDF scaricato.', 'success');
+            return;
+          }
+          var data = result.data;
+          var status = (data.status || '').toLowerCase();
+          if (status === 'processing' || status === 'queued' || status === 'pending') {
+            var pos = data.queue_position ? ' (posizione ' + data.queue_position + ')' : '';
+            setStatus('Generazione PDF in corso' + pos + '\u2026 (' + (pollCount + 1) + ')', 'loading');
+            pollPdf(requestId, pollCount + 1);
+            return;
+          }
+          setStatus('Errore PDF: ' + (data.message || data.detail || 'Errore sconosciuto'), 'error');
+          setFormDisabled(false);
+        })
+        .catch(function(err) {
+          setStatus('Errore di rete nel polling PDF: ' + err.message, 'error');
+          setFormDisabled(false);
+        });
+    }, POLL_INTERVAL);
+  }
+
+  // ── Form submit ────────────────────────────────────────────────────────────
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    resultsEl.className = '';
+    resultsBody.textContent = '';
+
+    var endpoint = form.querySelector('input[name="endpoint"]:checked').value;
+    var body = {
+      provincia:    form.provincia.value.trim(),
+      comune:       form.comune.value.trim(),
+      foglio:       form.foglio.value.trim(),
+      particella:   form.particella.value.trim(),
+      tipo_catasto: form.tipo_catasto.value,
+    };
+    if (form.sezione.value.trim())    body.sezione    = form.sezione.value.trim();
+    if (form.subalterno.value.trim()) body.subalterno = form.subalterno.value.trim();
+
+    setFormDisabled(true);
+    setStatus('Invio richiesta al servizio\u2026', 'loading');
+
+    fetch(API_BASE + '/' + endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    .then(function(resp) {
+      return resp.json().then(function(data) {
+        return { ok: resp.ok, status: resp.status, data: data };
+      });
+    })
+    .then(function(res) {
+      if (!res.ok) {
+        var msg = (res.data.detail || res.data.error || res.data.message || 'HTTP ' + res.status);
+        setStatus('Errore: ' + msg, 'error');
+        setFormDisabled(false);
+        return;
+      }
+
+      var data  = res.data;
+      var reqId = data.request_id;
+
+      if (!reqId) {
+        // Immediate response
+        hideStatus();
+        setFormDisabled(false);
+        renderResults(data);
+        return;
+      }
+
+      setStatus('Richiesta accettata — ID: ' + reqId.substring(0, 16) + '\u2026', 'loading');
+      if (endpoint === 'visura/pdf') {
+        pollPdf(reqId, 0);
+      } else {
+        pollResult(reqId, 0);
+      }
+    })
+    .catch(function(err) {
+      setStatus('Impossibile connettersi a ' + API_BASE + ' \u2014 il servizio è in esecuzione? (' + err.message + ')', 'error');
+      setFormDisabled(false);
+    });
+  });
+</script>
+</body>
+</html>

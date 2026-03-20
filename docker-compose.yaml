@@ -1,22 +1,35 @@
 services:
+
   visure-service:
     build: .
+    container_name: visure-service
+    restart: unless-stopped
+
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8001:8000"   # solo localhost → nginx host fa da proxy
+
     environment:
       - PYTHONUNBUFFERED=1
       - DISPLAY=:99
+      - HOST=visura.malerba.info
+      - PROTOCOL=https
+
     env_file:
       - .env
+
     volumes:
-      - ./:/app
       - ./logs:/app/logs:rw
-    restart: unless-stopped
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-    # Per debugging, rimuovi in produzione
-    stdin_open: true
-    tty: true
+      start_period: 60s
+
+    networks:
+      - crawl_net   # stessa rete di n8n e crawl4ai → comunicano per nome container
+
+networks:
+  crawl_net:
+    external: true

@@ -346,6 +346,14 @@ async def find_best_option_match(page, selector, search_text):
                 best_match = value
                 print(f"[MATCH] Candidato (value starts with): '{text}' -> '{value}' (score: {score:.2f})")
 
+        # PRIORITÀ 4b: Sigla provincia: value termina con "-XX" e XX corrisponde al testo cercato
+        elif value_upper.endswith(f"-{search_upper}") and len(search_text) <= 4:
+            score = 0.85  # Alta priorità per sigla provincia
+            if score > best_score:
+                best_score = score
+                best_match = value
+                print(f"[MATCH] Candidato (sigla suffix): '{text}' -> '{value}' (score: {score:.2f})")
+
         # PRIORITÀ 5: Match che contiene il testo cercato
         elif search_upper in text_upper:
             score = len(search_text) / len(text) * 0.6  # Maggiore penalità per evitare falsi positivi
@@ -764,6 +772,111 @@ async def run_visura(
     }
 
     return result
+
+
+async def run_visura_pdf(
+    page: Page,
+    provincia: str,
+    comune: str,
+    sezione=None,
+    foglio="9",
+    particella="166",
+    tipo_catasto="T",
+    subalterno=None,
+) -> bytes:
+    """Esegue la ricerca catastale e restituisce il PDF della 'Visura Per Immobile'.
+    Richiede headless=True (già impostato). Restituisce i byte del PDF."""
+    time0 = time.time()
+    logger = PageLogger("visura_pdf")
+    print(f"[VISURA_PDF] Inizio: {provincia}/{comune} F.{foglio} P.{particella} tipo={tipo_catasto}")
+
+    # STEP 1: pagina scelta servizio
+    await page.goto("https://sister3.agenziaentrate.gov.it/Visure/SceltaServizio.do?tipo=/T/TM/VCVC_", timeout=60000)
+    await page.wait_for_load_state("networkidle", timeout=30000)
+    await logger.log(page, "scelta_servizio")
+
+    if "SceltaServizio.do" not in page.url:
+        raise Exception(f"Sessione scaduta - URL: {page.url}")
+
+    provincia_value = await find_best_option_match(page, "select[name='listacom']", provincia)
+    if not provincia_value:
+        raise Exception(f"Provincia '{provincia}' non trovata")
+    await page.locator("select[name='listacom']").select_option(provincia_value)
+    await page.locator("input[type='submit'][value='Applica']").click()
+    await page.wait_for_load_state("networkidle", timeout=30000)
+
+    # STEP 2: selezione immobile
+    await page.get_by_role("link", name="Immobile").click()
+    await page.wait_for_load_state("networkidle", timeout=30000)
+
+    try:
+        await page.locator("select[name='tipoCatasto']").select_option(tipo_catasto)
+    except Exception:
+        pass
+
+    comune_value = await find_best_option_match(page, "select[name='denomComune']", comune)
+    if not comune_value:
+        raise Exception(f"Comune '{comune}' non trovato")
+    await page.locator("select[name='denomComune']").select_option(comune_value)
+
+    if sezione:
+        try:
+            await page.locator("input[name='selSezione'][value='scegli la sezione']").click()
+            await page.wait_for_load_state("networkidle", timeout=30000)
+            sezione_value = await find_best_option_match(page, "select[name='sezione']", sezione)
+            if sezione_value:
+                await page.locator("select[name='sezione']").select_option(sezione_value)
+        except Exception as e:
+            print(f"[VISURA_PDF] Sezione non selezionabile: {e}")
+
+    await page.locator("input[name='foglio']").fill(str(foglio))
+    await page.locator("input[name='particella1']").fill(str(particella))
+    if subalterno:
+        await page.locator("input[name='subalterno1']").fill(str(subalterno))
+
+    await page.locator("input[name='scelta'][value='Ricerca']").click()
+    await page.wait_for_load_state("networkidle", timeout=30000)
+    await logger.log(page, "ricerca")
+
+    # Conferma assenza subalterno se richiesta
+    try:
+        conferma = page.locator("input[name='confAssSub'][value='Conferma']")
+        if await conferma.count() > 0:
+            await conferma.click()
+            await page.wait_for_load_state("networkidle", timeout=30000)
+    except Exception:
+        pass
+
+    await logger.log(page, "risultati")
+
+    page_text = await page.inner_text("body")
+    if "NESSUNA CORRISPONDENZA TROVATA" in page_text:
+        raise Exception("Nessuna corrispondenza trovata per i parametri forniti")
+
+    # Verifica che il radio visImmSel sia presente
+    radio_count = await page.locator("input[name='visImmSel']").count()
+    if radio_count == 0:
+        raise Exception("Nessun immobile disponibile per la visura PDF")
+
+    # STEP 3: clicca "Visura Per Immobile" → pagina dettaglio
+    print("[VISURA_PDF] Cliccando 'Visura Per Immobile'...")
+    await page.locator("input[name='visuraImm'][value='Visura Per Immobile']").click()
+    await page.wait_for_load_state("networkidle", timeout=30000)
+    await logger.log(page, "dettaglio_immobile")
+
+    current_url = page.url
+    print(f"[VISURA_PDF] Pagina dettaglio caricata: {current_url}")
+
+    # STEP 4: cattura PDF con print stylesheet
+    pdf_bytes = await page.pdf(
+        format="A4",
+        print_background=True,
+        margin={"top": "1.5cm", "bottom": "1.5cm", "left": "1.5cm", "right": "1.5cm"},
+    )
+
+    time1 = time.time()
+    print(f"[VISURA_PDF] PDF generato in {time1 - time0:.2f}s ({len(pdf_bytes)} bytes)")
+    return pdf_bytes
 
 
 async def logout(page: Page):
